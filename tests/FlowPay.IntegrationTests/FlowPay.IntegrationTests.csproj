@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FlowPay.IntegrationTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <!-- xunit.v3 hosts itself on Microsoft.Testing.Platform, which supersedes VSTest on
+         the .NET 10 SDK. The repository's global.json selects that runner for
+         `dotnet test`; the project is also directly runnable with `dotnet run`. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FlowPay.Api\FlowPay.Api.csproj" />
+  </ItemGroup>
+
+</Project>

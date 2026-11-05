@@ -1,0 +1,133 @@
+# The full FlowPay stack: PostgreSQL, RabbitMQ, the API behind a load balancer, and the
+# worker that drains the outbox and runs the consumers.
+#
+#   docker compose up --build
+#   docker compose up --build --scale api=3 --scale worker=2
+#
+# Scaling is the point of the topology rather than a nicety. Several API replicas share
+# one idempotency table and are serialized by its unique index; several workers poll one
+# outbox and are kept disjoint by FOR UPDATE SKIP LOCKED. Neither needs a leader, a
+# partition assignment, or any coordination beyond the database.
+
+name: flowpay
+
+x-flowpay-config: &flowpay-config
+  ConnectionStrings__FlowPay: >-
+    Host=postgres;Port=5432;Database=flowpay;Username=flowpay;Password=flowpay;
+    Maximum Pool Size=50;Minimum Pool Size=5;Timeout=15;Command Timeout=30
+  RabbitMq__Host: rabbitmq
+  RabbitMq__Port: "5672"
+  RabbitMq__UserName: flowpay
+  RabbitMq__Password: flowpay
+  FlowPay__PlatformFeeAccounts__USD: 00000000-0000-7000-8000-000001000000
+  FlowPay__PlatformFeeAccounts__EUR: 00000000-0000-7000-8000-000002000000
+  FlowPay__PlatformFeeAccounts__GBP: 00000000-0000-7000-8000-000003000000
+  FlowPay__FeeAccountShards: "16"
+  FlowPay__FeeBasisPoints: "290"
+  FlowPay__FeeFixedMinorUnits: "30"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flowpay
+      POSTGRES_USER: flowpay
+      POSTGRES_PASSWORD: flowpay
+      # Checksums catch silent corruption. On a payment ledger that is worth the few
+      # percent of write throughput it costs.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      # Sized for the load harness: the API replicas and the workers each hold a pool,
+      # and the default of 100 is not enough once the stack is scaled out.
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=256MB
+      # Lets the planner know most of the working set is cached, which keeps it choosing
+      # index scans for the lookups on the request path.
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - log_min_duration_statement=500
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowpay -d flowpay"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: flowpay
+      RABBITMQ_DEFAULT_PASS: flowpay
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: src/FlowPay.Api/Dockerfile
+    environment:
+      <<: *flowpay-config
+      ASPNETCORE_ENVIRONMENT: Production
+      # The worker owns dispatching. An API replica that also dispatched would compete
+      # with request handling for connections and CPU.
+      FlowPay__Hosting__RunOutboxDispatcher: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    # No fixed container name or host port, so `--scale api=N` works.
+    expose:
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/FlowPay.Worker/Dockerfile
+    environment:
+      <<: *flowpay-config
+      DOTNET_ENVIRONMENT: Production
+      RabbitMq__ClientProvidedName: flowpay-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "5080:8080"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  rabbitmq-data:

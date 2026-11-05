@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+artifacts/
+publish/
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# Test and load harness output
+TestResults/
+*.trx
+*.coverage
+*.coverlet.json
+coverage*.xml
+loadtest-*.csv
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local secrets and overrides
+appsettings.Local.json
+.env
+.env.local
+docker-compose.override.yml

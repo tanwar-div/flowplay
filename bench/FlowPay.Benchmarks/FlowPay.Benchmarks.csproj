@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FlowPay.Benchmarks</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <!-- BenchmarkDotNet requires an optimized build to produce meaningful numbers. -->
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FlowPay.Domain\FlowPay.Domain.csproj" />
+    <ProjectReference Include="..\..\src\FlowPay.Application\FlowPay.Application.csproj" />
+  </ItemGroup>
+
+</Project>

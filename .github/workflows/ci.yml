@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  build-and-test:
+    name: Build, unit tests, integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore FlowPay.slnx
+
+      - name: Build
+        run: dotnet build FlowPay.slnx -c Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/FlowPay.UnitTests/FlowPay.UnitTests.csproj -c Release --no-build
+
+      # Testcontainers starts real PostgreSQL and RabbitMQ instances. The guarantees under
+      # test — ON CONFLICT DO NOTHING, FOR UPDATE, SKIP LOCKED, the CHECK constraints and
+      # the broker's retry topology — do not exist outside the real services, so there is
+      # nothing meaningful to substitute them with.
+      - name: Integration tests
+        run: dotnet test tests/FlowPay.IntegrationTests/FlowPay.IntegrationTests.csproj -c Release --no-build
+
+  benchmarks:
+    name: Microbenchmark smoke run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # A short job, not a full run. Shared CI runners are too noisy for the absolute
+      # numbers to mean anything; this exists to catch a benchmark that stops compiling
+      # or starts throwing, and to flag an allocation appearing on a path that had none.
+      - name: Run benchmarks (short job)
+        run: >-
+          dotnet run -c Release --project bench/FlowPay.Benchmarks --
+          --job short --filter '*StateTransitionBenchmarks*' '*PaymentValidationBenchmarks*'
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: BenchmarkDotNet.Artifacts/results/
+          if-no-files-found: ignore
+
+  load-and-correctness:
+    name: End-to-end load and correctness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Start the stack
+        run: docker compose up --build -d --scale api=2 --scale worker=2
+
+      - name: Wait for readiness
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:5080/health/ready > /dev/null; then
+              echo "API is ready."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "The API did not become ready in time."
+          docker compose logs --tail 200
+          exit 1
+
+      # The replay and refund-storm scenarios are correctness gates: they exit non-zero if
+      # a duplicate financial effect or an over-refund is detected. The throughput run is
+      # reported but not gated, because a shared CI runner cannot be held to a latency
+      # objective measured on dedicated hardware.
+      - name: Idempotent replay
+        run: >-
+          dotnet run -c Release --project tools/FlowPay.LoadTest --
+          --scenario replay --operations 10000 --concurrency 32
+
+      - name: Concurrent refund stress
+        run: >-
+          dotnet run -c Release --project tools/FlowPay.LoadTest --
+          --scenario refundstorm --concurrency 32 --operations 2000
+
+      - name: Throughput (reported, not gated)
+        continue-on-error: true
+        run: >-
+          dotnet run -c Release --project tools/FlowPay.LoadTest --
+          --scenario throughput --rps 400 --duration 60 --csv loadtest-throughput.csv
+
+      - name: Final invariant check
+        run: dotnet run -c Release --project tools/FlowPay.LoadTest -- --scenario verify
+
+      - name: Upload load results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: loadtest-*.csv
+          if-no-files-found: ignore
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail 400
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

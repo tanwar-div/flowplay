@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/bench/">
+    <Project Path="bench/FlowPay.Benchmarks/FlowPay.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/FlowPay.Api/FlowPay.Api.csproj" />
+    <Project Path="src/FlowPay.Application/FlowPay.Application.csproj" />
+    <Project Path="src/FlowPay.Domain/FlowPay.Domain.csproj" />
+    <Project Path="src/FlowPay.Infrastructure/FlowPay.Infrastructure.csproj" />
+    <Project Path="src/FlowPay.Worker/FlowPay.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FlowPay.IntegrationTests/FlowPay.IntegrationTests.csproj" />
+    <Project Path="tests/FlowPay.UnitTests/FlowPay.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/FlowPay.LoadTest/FlowPay.LoadTest.csproj" />
+  </Folder>
+</Solution>

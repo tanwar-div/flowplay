@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FlowPay.UnitTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <!-- xunit.v3 hosts itself on Microsoft.Testing.Platform, which supersedes VSTest on
+         the .NET 10 SDK. The repository's global.json selects that runner for
+         `dotnet test`; the project is also directly runnable with `dotnet run`. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FlowPay.Domain\FlowPay.Domain.csproj" />
+    <ProjectReference Include="..\..\src\FlowPay.Application\FlowPay.Application.csproj" />
+  </ItemGroup>
+
+</Project>
